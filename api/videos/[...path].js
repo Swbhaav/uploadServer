@@ -1,20 +1,41 @@
-// api/videos/[...path].js - handles DELETE /api/videos/:filename
+// api/videos/[...path].js - GET: stream file from folder | DELETE: remove from Blob
+const path = require('path');
+const fs = require('fs');
 const { list, del } = require('@vercel/blob');
 
 module.exports = async (req, res) => {
-  res.setHeader('Content-Type', 'application/json');
-
-  if (req.method !== 'DELETE') {
-    return res.status(405).json({ success: false, message: 'Method not allowed' });
-  }
-
   const pathSegments = req.query.path || [];
   const filename = decodeURIComponent(pathSegments[0] || '');
 
   if (!filename) {
+    res.setHeader('Content-Type', 'application/json');
     return res.status(400).json({ success: false, message: 'Filename required' });
   }
 
+  // GET: serve video file from api/videos folder (so folder videos play)
+  if (req.method === 'GET') {
+    const resolvedPath = path.resolve(path.join(__dirname, filename));
+    const resolvedDir = path.resolve(__dirname);
+    if (!resolvedPath.startsWith(resolvedDir)) {
+      res.setHeader('Content-Type', 'application/json');
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+    if (!fs.existsSync(resolvedPath) || !fs.statSync(resolvedPath).isFile()) {
+      res.setHeader('Content-Type', 'application/json');
+      return res.status(404).json({ success: false, message: 'Video not found' });
+    }
+    res.setHeader('Content-Type', 'video/mp4');
+    fs.createReadStream(resolvedPath).pipe(res);
+    return;
+  }
+
+  // DELETE: only for Blob-stored videos (folder videos can't be deleted via API)
+  if (req.method !== 'DELETE') {
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(405).json({ success: false, message: 'Method not allowed' });
+  }
+
+  res.setHeader('Content-Type', 'application/json');
   try {
     const { blobs } = await list();
     const blob = blobs.find(
@@ -22,7 +43,7 @@ module.exports = async (req, res) => {
     );
 
     if (!blob) {
-      return res.status(404).json({ success: false, message: 'Video not found' });
+      return res.status(404).json({ success: false, message: 'Video not found in Blob' });
     }
 
     await del(blob.url);
