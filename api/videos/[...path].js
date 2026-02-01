@@ -4,8 +4,24 @@ const fs = require('fs');
 const { list, del } = require('@vercel/blob');
 
 module.exports = async (req, res) => {
-  const pathSegments = req.query.path || [];
-  const filename = decodeURIComponent(pathSegments[0] || '');
+  // Vercel may pass path as req.query.path (array or string) or we parse from URL
+  const pathParam = req.query.path;
+  let filename = '';
+  if (Array.isArray(pathParam) && pathParam.length > 0) {
+    filename = pathParam[0];
+  } else if (typeof pathParam === 'string') {
+    filename = pathParam;
+  }
+  if (!filename && req.url) {
+    const pathPart = (req.url || '').split('?')[0];
+    const prefix = '/api/videos/';
+    filename = pathPart.startsWith(prefix) ? pathPart.slice(prefix.length) : '';
+  }
+  try {
+    filename = decodeURIComponent(filename || '').trim();
+  } catch {
+    filename = (filename || '').trim();
+  }
 
   if (!filename) {
     res.setHeader('Content-Type', 'application/json');

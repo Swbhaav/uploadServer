@@ -340,41 +340,54 @@
       progressBar.style.display = 'block';
       message.style.display = 'none';
 
+      const file = formData.get('video');
+      const useClientUpload = file && file.size > 4 * 1024 * 1024; // > 4MB: use client upload (bypasses 4.5MB limit)
+
       try {
-        const xhr = new XMLHttpRequest();
-
-        xhr.upload.addEventListener('progress', (e) => {
-          if (e.lengthComputable) {
-            const percent = Math.round((e.loaded / e.total) * 100);
-            progressFill.style.width = percent + '%';
-            progressFill.textContent = percent + '%';
-          }
-        });
-
-        xhr.addEventListener('load', () => {
-          if (xhr.status === 200) {
-            const response = JSON.parse(xhr.responseText);
-            showMessage('Video uploaded successfully!', 'success');
-            loadVideos();
-            fileInput.value = '';
-          } else {
-            showMessage('Upload failed: ' + xhr.statusText, 'error');
-          }
-          progressBar.style.display = 'none';
-          progressFill.style.width = '0%';
-        });
-
-        xhr.addEventListener('error', () => {
-          showMessage('Upload failed. Please try again.', 'error');
-          progressBar.style.display = 'none';
-        });
-
-        xhr.open('POST', '/api/upload');
-        xhr.send(formData);
+        if (useClientUpload) {
+          const { upload } = await import('https://esm.sh/@vercel/blob@2.0.1/client');
+          progressFill.style.width = '50%';
+          progressFill.textContent = 'Uploading...';
+          const blob = await upload(file.name, file, {
+            access: 'public',
+            handleUploadUrl: '/api/upload-handler'
+          });
+          showMessage('Video uploaded successfully!', 'success');
+          loadVideos();
+          fileInput.value = '';
+        } else {
+          const xhr = new XMLHttpRequest();
+          xhr.upload.addEventListener('progress', (e) => {
+            if (e.lengthComputable) {
+              const percent = Math.round((e.loaded / e.total) * 100);
+              progressFill.style.width = percent + '%';
+              progressFill.textContent = percent + '%';
+            }
+          });
+          xhr.addEventListener('load', () => {
+            if (xhr.status === 200) {
+              showMessage('Video uploaded successfully!', 'success');
+              loadVideos();
+              fileInput.value = '';
+            } else {
+              showMessage('Upload failed: ' + (xhr.status === 413 ? 'File too large (max 4.5MB via form). Use one file for larger uploads.' : xhr.statusText), 'error');
+            }
+            progressBar.style.display = 'none';
+            progressFill.style.width = '0%';
+          });
+          xhr.addEventListener('error', () => {
+            showMessage('Upload failed. Please try again.', 'error');
+            progressBar.style.display = 'none';
+          });
+          xhr.open('POST', '/api/upload');
+          xhr.send(formData);
+          return;
+        }
       } catch (error) {
         showMessage('Error: ' + error.message, 'error');
-        progressBar.style.display = 'none';
       }
+      progressBar.style.display = 'none';
+      progressFill.style.width = '0%';
     }
 
     async function uploadMultiple(formData) {
