@@ -336,6 +336,39 @@
       }
     }
 
+    function uploadSingleViaForm(formData) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) {
+            const percent = Math.round((e.loaded / e.total) * 100);
+            progressFill.style.width = percent + '%';
+            progressFill.textContent = percent + '%';
+          }
+        });
+        xhr.addEventListener('load', () => {
+          if (xhr.status === 200) {
+            showMessage('Video uploaded successfully!', 'success');
+            loadVideos();
+            fileInput.value = '';
+            resolve();
+          } else {
+            showMessage('Upload failed: ' + (xhr.status === 413 ? 'File too large (max 4.5MB).' : xhr.statusText), 'error');
+            reject(new Error(xhr.statusText));
+          }
+          progressBar.style.display = 'none';
+          progressFill.style.width = '0%';
+        });
+        xhr.addEventListener('error', () => {
+          showMessage('Upload failed. Please try again.', 'error');
+          progressBar.style.display = 'none';
+          reject(new Error('Network error'));
+        });
+        xhr.open('POST', '/api/upload');
+        xhr.send(formData);
+      });
+    }
+
     async function uploadSingle(formData) {
       progressBar.style.display = 'block';
       message.style.display = 'none';
@@ -345,42 +378,27 @@
 
       try {
         if (useClientUpload) {
-          const { upload } = await import('https://esm.sh/@vercel/blob@2.0.1/client');
-          progressFill.style.width = '50%';
-          progressFill.textContent = 'Uploading...';
-          const blob = await upload(file.name, file, {
-            access: 'public',
-            handleUploadUrl: window.location.origin + '/api/upload-handler'
-          });
-          showMessage('Video uploaded successfully!', 'success');
-          loadVideos();
-          fileInput.value = '';
+          try {
+            const { upload } = await import('https://esm.sh/@vercel/blob@2.0.1/client');
+            progressFill.style.width = '50%';
+            progressFill.textContent = 'Uploading...';
+            const blob = await upload(file.name, file, {
+              access: 'public',
+              handleUploadUrl: window.location.origin + '/api/upload-handler'
+            });
+            showMessage('Video uploaded successfully!', 'success');
+            loadVideos();
+            fileInput.value = '';
+          } catch (clientErr) {
+            if (clientErr.message && clientErr.message.includes('client token') && file.size <= 4.5 * 1024 * 1024) {
+              showMessage('Large-file upload not configured. Trying standard upload (max 4.5MB)...', 'success');
+              await uploadSingleViaForm(formData);
+              return;
+            }
+            throw clientErr;
+          }
         } else {
-          const xhr = new XMLHttpRequest();
-          xhr.upload.addEventListener('progress', (e) => {
-            if (e.lengthComputable) {
-              const percent = Math.round((e.loaded / e.total) * 100);
-              progressFill.style.width = percent + '%';
-              progressFill.textContent = percent + '%';
-            }
-          });
-          xhr.addEventListener('load', () => {
-            if (xhr.status === 200) {
-              showMessage('Video uploaded successfully!', 'success');
-              loadVideos();
-              fileInput.value = '';
-            } else {
-              showMessage('Upload failed: ' + (xhr.status === 413 ? 'File too large (max 4.5MB via form). Use one file for larger uploads.' : xhr.statusText), 'error');
-            }
-            progressBar.style.display = 'none';
-            progressFill.style.width = '0%';
-          });
-          xhr.addEventListener('error', () => {
-            showMessage('Upload failed. Please try again.', 'error');
-            progressBar.style.display = 'none';
-          });
-          xhr.open('POST', '/api/upload');
-          xhr.send(formData);
+          uploadSingleViaForm(formData);
           return;
         }
       } catch (error) {
