@@ -350,7 +350,7 @@
           progressFill.textContent = 'Uploading...';
           const blob = await upload(file.name, file, {
             access: 'public',
-            handleUploadUrl: '/api/upload-handler'
+            handleUploadUrl: window.location.origin + '/api/upload-handler'
           });
           showMessage('Video uploaded successfully!', 'success');
           loadVideos();
@@ -384,7 +384,11 @@
           return;
         }
       } catch (error) {
-        showMessage('Error: ' + error.message, 'error');
+        let msg = error.message || 'Upload failed';
+        if (msg.includes('client token')) {
+          msg += '. Add BLOB_READ_WRITE_TOKEN in Vercel → Project → Settings → Environment Variables, then redeploy.';
+        }
+        showMessage(msg, 'error');
       }
       progressBar.style.display = 'none';
       progressFill.style.width = '0%';
