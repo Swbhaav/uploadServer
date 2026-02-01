@@ -1,4 +1,4 @@
-// api/videos.js
+// api/videos.js - handles GET /api/videos (list all)
 const express = require('express');
 const { list } = require('@vercel/blob');
 
@@ -6,12 +6,15 @@ const app = express();
 
 app.get('/api/videos', async (req, res) => {
   try {
-    const blobs = await list(); // fetch all blobs
-    const videos = blobs.blobs.map(b => b.url);
+    const blobs = await list();
+    const data = blobs.blobs.map(b => ({
+      url: b.url,
+      filename: b.pathname || b.url.split('/').pop() || 'video'
+    }));
 
-    res.json({ videos });
+    res.json({ success: true, data });
   } catch (error) {
-    res.status(500).json({ videos: [], error: error.message });
+    res.status(500).json({ success: false, data: [], error: error.message });
   }
 });
 

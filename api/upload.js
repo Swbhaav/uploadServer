@@ -1,4 +1,4 @@
-// api/upload.js
+// api/upload.js - handles POST /api/upload (single file)
 const express = require('express');
 const multer = require('multer');
 const { put } = require('@vercel/blob');
@@ -12,7 +12,6 @@ app.post('/api/upload', upload.single('video'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'No video uploaded' });
     }
 
-    // Store in Vercel Blob
     const blob = await put(req.file.originalname, req.file.buffer, { access: 'public' });
 
     res.json({

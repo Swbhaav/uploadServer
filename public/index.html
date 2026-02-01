@@ -418,7 +418,7 @@
     // Load and display videos
     async function loadVideos() {
       try {
-        const response = await fetch('/api/videos-list');
+        const response = await fetch('/api/videos');
         const data = await response.json();
 
         if (data.success && data.data.length > 0) {
@@ -460,7 +460,7 @@
       }
 
       try {
-        const response = await fetch(`/api/videos/${filename}`, {
+        const response = await fetch(`/api/videos/${encodeURIComponent(filename)}`, {
           method: 'DELETE'
         });
 
