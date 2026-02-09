@@ -1,31 +1,81 @@
-// api/upload-multiple.js - handles POST /api/upload-multiple
-const express = require('express');
-const multer = require('multer');
+// api/upload-multiple.js - Upload multiple videos to Blob storage
 const { put } = require('@vercel/blob');
+const multiparty = require('multiparty');
 
-const app = express();
-const upload = multer({ storage: multer.memoryStorage() });
+module.exports = async (req, res) => {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ 
+      success: false, 
+      message: 'Method not allowed' 
+    });
+  }
 
-app.post('/api/upload-multiple', upload.array('videos', 20), async (req, res) => {
   try {
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ success: false, message: 'No videos uploaded' });
-    }
+    const form = new multiparty.Form();
 
-    const results = [];
-    for (const file of req.files) {
-      const blob = await put(file.originalname, file.buffer, { access: 'public' });
-      results.push({ url: blob.url, filename: file.originalname });
-    }
+    form.parse(req, async (err, fields, files) => {
+      if (err) {
+        return res.status(400).json({
+          success: false,
+          message: 'Failed to parse upload: ' + err.message
+        });
+      }
 
-    res.json({
-      success: true,
-      message: `${results.length} video(s) uploaded successfully`,
-      data: results
+      // Get all uploaded video files
+      const videoFiles = files.videos || [];
+
+      if (videoFiles.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'No video files provided'
+        });
+      }
+
+      const fs = require('fs');
+      const uploadedVideos = [];
+
+      // Upload each video
+      for (const videoFile of videoFiles) {
+        try {
+          const fileBuffer = fs.readFileSync(videoFile.path);
+
+          const blob = await put(videoFile.originalFilename, fileBuffer, {
+            access: 'public',
+            contentType: videoFile.headers['content-type'] || 'video/mp4'
+          });
+
+          uploadedVideos.push({
+            filename: blob.pathname,
+            url: blob.url,
+            size: blob.size
+          });
+
+          // Clean up temporary file
+          fs.unlinkSync(videoFile.path);
+        } catch (uploadError) {
+          console.error(`Failed to upload ${videoFile.originalFilename}:`, uploadError);
+          // Continue with other files
+        }
+      }
+
+      if (uploadedVideos.length === 0) {
+        return res.status(500).json({
+          success: false,
+          message: 'All uploads failed'
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: `${uploadedVideos.length} video(s) uploaded successfully`,
+        data: uploadedVideos
+      });
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error('Upload error:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Upload failed'
+    });
   }
-});
-
-module.exports = app;
+};

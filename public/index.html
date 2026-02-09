@@ -249,7 +249,7 @@
     <!-- Header Section -->
     <div class="header">
       <h1>Hello World!</h1>
-      <p>This website is hosted from my laptop using ngrok! All videos are served dynamically.</p>
+      <p>This website is hosted on Vercel! All videos are stored in Vercel Blob storage and served via CDN.</p>
     </div>
 
     <h2>🎬 Upload & Manage Videos</h2>
@@ -266,7 +266,7 @@
         </button>
         <input type="file" id="fileInput" accept="video/*" multiple>
         <p style="margin-top: 10px; color: #666; font-size: 14px;">
-          Supported formats: MP4, MOV, AVI, WebM, etc. (Max 100MB)
+          Supported formats: MP4, MOV, AVI, WebM, etc.
         </p>
       </div>
 
@@ -325,20 +325,27 @@
 
     // Upload videos
     async function uploadVideos(files) {
-      const formData = new FormData();
-      
       if (files.length === 1) {
-        formData.append('video', files[0]);
-        await uploadSingle(formData);
+        await uploadSingle(files[0]);
       } else {
-        files.forEach(file => formData.append('videos', file));
-        await uploadMultiple(formData);
+        await uploadMultiple(files);
       }
     }
 
-    function uploadSingleViaForm(formData) {
-      return new Promise((resolve, reject) => {
+    // Upload single video
+    async function uploadSingle(file) {
+      progressBar.style.display = 'block';
+      message.style.display = 'none';
+      progressFill.style.width = '10%';
+      progressFill.textContent = 'Uploading...';
+
+      try {
+        const formData = new FormData();
+        formData.append('video', file);
+
         const xhr = new XMLHttpRequest();
+
+        // Track upload progress
         xhr.upload.addEventListener('progress', (e) => {
           if (e.lengthComputable) {
             const percent = Math.round((e.loaded / e.total) * 100);
@@ -346,79 +353,51 @@
             progressFill.textContent = percent + '%';
           }
         });
+
         xhr.addEventListener('load', () => {
           if (xhr.status === 200) {
-            showMessage('Video uploaded successfully!', 'success');
-            loadVideos();
-            fileInput.value = '';
-            resolve();
+            const data = JSON.parse(xhr.responseText);
+            if (data.success) {
+              showMessage('Video uploaded successfully!', 'success');
+              loadVideos();
+              fileInput.value = '';
+            } else {
+              showMessage('Upload failed: ' + (data.message || 'Unknown error'), 'error');
+            }
           } else {
-            showMessage('Upload failed: ' + (xhr.status === 413 ? 'File too large (max 4.5MB).' : xhr.statusText), 'error');
-            reject(new Error(xhr.statusText));
+            showMessage('Upload failed: ' + xhr.statusText, 'error');
           }
           progressBar.style.display = 'none';
           progressFill.style.width = '0%';
         });
+
         xhr.addEventListener('error', () => {
           showMessage('Upload failed. Please try again.', 'error');
           progressBar.style.display = 'none';
-          reject(new Error('Network error'));
+          progressFill.style.width = '0%';
         });
+
         xhr.open('POST', '/api/upload');
         xhr.send(formData);
-      });
-    }
 
-    async function uploadSingle(formData) {
-      progressBar.style.display = 'block';
-      message.style.display = 'none';
-
-      const file = formData.get('video');
-      const useClientUpload = file && file.size > 4 * 1024 * 1024; // > 4MB: use client upload (bypasses 4.5MB limit)
-
-      try {
-        if (useClientUpload) {
-          try {
-            const { upload } = await import('https://esm.sh/@vercel/blob@2.0.1/client');
-            progressFill.style.width = '50%';
-            progressFill.textContent = 'Uploading...';
-            const blob = await upload(file.name, file, {
-              access: 'public',
-              handleUploadUrl: window.location.origin + '/api/upload-handler'
-            });
-            showMessage('Video uploaded successfully!', 'success');
-            loadVideos();
-            fileInput.value = '';
-          } catch (clientErr) {
-            if (clientErr.message && clientErr.message.includes('client token') && file.size <= 4.5 * 1024 * 1024) {
-              showMessage('Large-file upload not configured. Trying standard upload (max 4.5MB)...', 'success');
-              await uploadSingleViaForm(formData);
-              return;
-            }
-            throw clientErr;
-          }
-        } else {
-          uploadSingleViaForm(formData);
-          return;
-        }
       } catch (error) {
-        let msg = error.message || 'Upload failed';
-        if (msg.includes('client token')) {
-          msg += '. Add BLOB_READ_WRITE_TOKEN in Vercel → Project → Settings → Environment Variables, then redeploy.';
-        }
-        showMessage(msg, 'error');
+        showMessage('Error: ' + error.message, 'error');
+        progressBar.style.display = 'none';
+        progressFill.style.width = '0%';
       }
-      progressBar.style.display = 'none';
-      progressFill.style.width = '0%';
     }
 
-    async function uploadMultiple(formData) {
+    // Upload multiple videos
+    async function uploadMultiple(files) {
       progressBar.style.display = 'block';
       message.style.display = 'none';
-      progressFill.style.width = '50%';
+      progressFill.style.width = '10%';
       progressFill.textContent = 'Uploading...';
 
       try {
+        const formData = new FormData();
+        files.forEach(file => formData.append('videos', file));
+
         const response = await fetch('/api/upload-multiple', {
           method: 'POST',
           body: formData
@@ -427,6 +406,8 @@
         const data = await response.json();
 
         if (data.success) {
+          progressFill.style.width = '100%';
+          progressFill.textContent = '100%';
           showMessage(`${data.data.length} video(s) uploaded successfully!`, 'success');
           loadVideos();
           fileInput.value = '';
@@ -450,22 +431,22 @@
       }, 5000);
     }
 
-    // Load and display videos
+    // Load and display videos from Blob storage
     async function loadVideos() {
       try {
         const response = await fetch('/api/videos');
         const data = await response.json();
 
-        if (data.success && data.data.length > 0) {
-          videoGallery.innerHTML = data.data.map(video => `
+        if (data.success && data.videos && data.videos.length > 0) {
+          videoGallery.innerHTML = data.videos.map(video => `
             <div class="video-card">
-              <video controls>
+              <video controls preload="metadata">
                 <source src="${video.url}" type="video/mp4">
                 Your browser does not support the video tag.
               </video>
               <div class="video-info">
                 <div class="video-name" title="${video.filename}">${video.filename}</div>
-                <button class="delete-btn" onclick="deleteVideo('${video.filename}')">
+                <button class="delete-btn" onclick="deleteVideo('${video.filename.replace(/'/g, "\\'")}')">
                   🗑️ Delete
                 </button>
               </div>
@@ -482,13 +463,14 @@
       } catch (error) {
         videoGallery.innerHTML = `
           <div class="empty-state">
+            <div class="empty-state-icon">⚠️</div>
             <p>Error loading videos: ${error.message}</p>
           </div>
         `;
       }
     }
 
-    // Delete video
+    // Delete video from Blob storage
     async function deleteVideo(filename) {
       if (!confirm('Are you sure you want to delete this video?')) {
         return;
